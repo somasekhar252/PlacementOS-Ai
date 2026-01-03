@@ -1,0 +1,7 @@
+{
+  "name": "PlacementOS AI",
+  "description": "Professional career management platform with real-time AI mock interviews, automated resume gap analysis, and industry readiness scoring.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
