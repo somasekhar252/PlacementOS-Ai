@@ -11,6 +11,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ onComplete }) => {
   const [profile, setProfile] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isSuccess, setIsSuccess] = useState(false);
   
   const [form, setForm] = useState({
     name: '',
@@ -65,25 +66,51 @@ const ProfileView: React.FC<ProfileViewProps> = ({ onComplete }) => {
       };
       
       setProfile(finalizedData);
-      setIsEditing(false);
       
       // 3. Trigger dashboard briefing generation
       await api.post('/generate-briefing', { profile: finalizedData });
+      
+      setLoading(false);
+      setIsSuccess(true);
       
       if (onComplete) onComplete(finalizedData);
     } catch (err) {
       console.error("Synthesis error:", err);
       alert("AI Synthesis failed. Please check your connectivity and try again.");
-    } finally {
       setLoading(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-96 space-y-4">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">AI Synthesis Active...</p>
+      <div className="flex flex-col items-center justify-center h-[70vh] space-y-6 animate-in fade-in duration-500">
+        <div className="relative">
+          <div className="animate-spin rounded-full h-20 w-20 border-b-4 border-blue-600"></div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-8 h-8 bg-blue-600/10 rounded-full animate-pulse"></div>
+          </div>
+        </div>
+        <div className="text-center space-y-2">
+          <p className="text-slate-900 font-black uppercase text-xs tracking-[0.3em]">AI Synthesis Engine Active</p>
+          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Optimizing Professional Identity Matrix...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isSuccess) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] space-y-8 animate-in zoom-in-95 duration-700">
+        <div className="w-24 h-24 bg-emerald-500 rounded-[2rem] flex items-center justify-center text-5xl shadow-2xl shadow-emerald-500/20 animate-bounce">
+          ✅
+        </div>
+        <div className="text-center space-y-3">
+          <h2 className="text-4xl font-black text-slate-900 tracking-tight">Systems Synced</h2>
+          <p className="text-slate-500 font-medium text-lg">Your professional OS has been successfully initialized.</p>
+          <div className="pt-4">
+             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600 animate-pulse">Unlocking Dashboard...</span>
+          </div>
+        </div>
       </div>
     );
   }
@@ -92,9 +119,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({ onComplete }) => {
     return (
       <div className="max-w-3xl mx-auto space-y-10 py-10 animate-in slide-in-from-bottom-6 duration-500">
         <div className="text-center space-y-4">
-          <div className="inline-block px-4 py-1 bg-blue-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest">Mandatory Onboarding</div>
+          <div className="inline-block px-4 py-1 bg-blue-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-600/20">Identity Initialization</div>
           <h2 className="text-4xl font-black text-slate-900 tracking-tight">Professional Identity Synthesis</h2>
-          <p className="text-slate-500 font-medium">Initialize your PlacementOS identity. Our AI will transform your raw inputs into a recruiter-optimized profile.</p>
+          <p className="text-slate-500 font-medium">Configure your core career parameters. Our AI transforms raw data into a recruiter-optimized profile.</p>
         </div>
 
         <div className="bg-white p-12 rounded-[3.5rem] border border-slate-200 shadow-2xl space-y-8">
@@ -138,7 +165,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ onComplete }) => {
           </div>
           
           <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Skill Set (CSV)</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Skill Set (Comma Separated)</label>
             <input 
               value={form.skills} 
               onChange={e => setForm({...form, skills: e.target.value})} 
@@ -172,7 +199,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ onComplete }) => {
             disabled={!form.name || !form.skills}
             className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black uppercase tracking-[0.2em] shadow-2xl hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50"
           >
-            Initialize Professional OS →
+            Synthesize Career OS →
           </button>
         </div>
       </div>

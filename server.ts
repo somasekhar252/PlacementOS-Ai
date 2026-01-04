@@ -1,118 +1,98 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
+import { db, auth, doc, getDoc, setDoc, updateDoc } from "./firebase.ts";
 
-const STORAGE_KEY = 'placement_os_persistence_v3';
-
-class VirtualServer {
-  private db: any;
-
-  constructor() {
-    this.initDB();
-  }
-
-  private initDB() {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        this.db = JSON.parse(saved);
-      } catch (e) {
-        console.error("DB Parse Error, resetting...", e);
-        this.resetDB();
-      }
-    } else {
-      this.resetDB();
-    }
-  }
-
-  private resetDB() {
-    this.db = {
-      userProfile: null,
-      sessionBriefing: null,
-      jobs: [
-        { id: '1', title: 'Junior Frontend Developer', company: 'Google Cloud', location: 'Bangalore', salary: '₹12–18 LPA', matchScore: 85, link: 'https://google.com/careers', source: 'Google' },
-        { id: '2', title: 'SDE Intern', company: 'Microsoft', location: 'Hyderabad', salary: '₹80,000/mo', matchScore: 72, link: 'https://careers.microsoft.com', source: 'Microsoft' },
-        { id: '3', title: 'AI Research Assistant', company: 'Meta', location: 'Remote', salary: '₹24 LPA', matchScore: 91, link: 'https://meta.com/careers', source: 'Meta' }
-      ]
-    };
-    this.saveDB();
-  }
-
-  private saveDB() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.db));
-  }
+/**
+ * Backend Strategy:
+ * This class acts as a secure controller between the Frontend (api.ts) 
+ * and our external services (Firebase for DB/Auth, Gemini for Intelligence).
+ */
+class FirebaseBackend {
+  private staticJobs = [
+    { id: '1', title: 'Junior Frontend Developer', company: 'Google Cloud', location: 'Bangalore', salary: '₹12–18 LPA', matchScore: 85, link: 'https://google.com/careers', source: 'Google' },
+    { id: '2', title: 'SDE Intern', company: 'Microsoft', location: 'Hyderabad', salary: '₹80,000/mo', matchScore: 72, link: 'https://careers.microsoft.com', source: 'Microsoft' },
+    { id: '3', title: 'AI Research Assistant', company: 'Meta', location: 'Remote', salary: '₹24 LPA', matchScore: 91, link: 'https://meta.com/careers', source: 'Meta' }
+  ];
 
   async handleRequest(endpoint: string, method: string, body?: any) {
+    const user = auth.currentUser;
+    // Allow job fetching without auth, but protect everything else
+    if (!user && endpoint !== '/jobs') throw new Error("Unauthorized: Please sign in to Career OS.");
+
     try {
       if (method === 'GET') {
-        if (endpoint === '/jobs') return this.db.jobs;
-        if (endpoint === '/profile') return this.db.userProfile;
-        if (endpoint === '/dashboard-briefing') return this.db.sessionBriefing;
+        if (endpoint === '/jobs') return this.staticJobs;
+        
+        if (user) {
+          if (endpoint === '/profile') {
+            const userRef = doc(db, 'users', user.uid);
+            const snap = await getDoc(userRef);
+            return snap.exists() ? snap.data() : null;
+          }
+          if (endpoint === '/dashboard-briefing') {
+            const briefingRef = doc(db, 'briefings', user.uid);
+            const snap = await getDoc(briefingRef);
+            return snap.exists() ? snap.data() : null;
+          }
+        }
       }
 
-      if (method === 'POST') {
-        if (endpoint === '/init-user') {
-          this.db.userProfile = body.profile;
-          this.saveDB();
-          return { success: true };
-        }
-
+      if (method === 'POST' && user) {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        
+        if (endpoint === '/synthesize-profile') return this.handleProfileSynthesis(ai, user.uid, body);
+        if (endpoint === '/generate-briefing') return this.handleBriefingGeneration(ai, user.uid, body);
         if (endpoint === '/chat') return this.handleChat(ai, body);
         if (endpoint === '/analyze-resume') return this.handleResumeAnalysis(ai, body);
-        if (endpoint === '/synthesize-profile') return this.handleProfileSynthesis(ai, body);
-        if (endpoint === '/generate-briefing') return this.handleBriefingGeneration(ai, body);
       }
       
-      throw new Error(`404 Not Found: ${endpoint}`);
-    } catch (error) {
-      console.error("[VIRTUAL SERVER ERROR]", error);
+      throw new Error(`Endpoint ${endpoint} not implemented.`);
+    } catch (error: any) {
+      console.error("[REAL FIREBASE BACKEND ERROR]", error);
       throw error;
     }
   }
 
-  private async handleProfileSynthesis(ai: GoogleGenAI, body: any) {
+  private async handleProfileSynthesis(ai: any, uid: string, body: any) {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Synthesize a professional identity for this student based on raw inputs: ${JSON.stringify(body.userDetails)}. Provide a detailed recruiter-ready profile.`,
+      contents: `You are a high-end tech recruiter. Based on these raw details: ${JSON.stringify(body.userDetails)}, synthesize a professional identity for this student. Focus on making them placement-ready.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            name: { type: Type.STRING },
             headline: { type: Type.STRING },
             summary: { type: Type.STRING },
             keySkills: { type: Type.ARRAY, items: { type: Type.STRING } },
-            careerGoal: { type: Type.STRING },
             preparationStage: { type: Type.STRING },
             suggestedFocusAreas: { type: Type.ARRAY, items: { type: Type.STRING } }
           },
-          required: ["name", "headline", "summary", "keySkills", "preparationStage"]
+          required: ["headline", "summary", "keySkills", "preparationStage"]
         }
       }
     });
     
-    const profile = JSON.parse(response.text);
-    
-    this.db.userProfile = { 
-      ...profile, 
+    const aiResult = JSON.parse(response.text);
+    const profileData = { 
+      ...aiResult, 
       ...body.userDetails,
-      name: body.userDetails.name || profile.name,
+      name: body.userDetails.name,
       profileCompleted: true,
-      onboarded: true,
       updatedAt: new Date().toISOString()
     };
-    this.saveDB();
-    return this.db.userProfile;
+
+    // PERSIST TO REAL FIRESTORE
+    const userRef = doc(db, 'users', uid);
+    await updateDoc(userRef, profileData);
+    return profileData;
   }
 
-  private async handleBriefingGeneration(ai: GoogleGenAI, body: any) {
-    const context = body.profile || this.db.userProfile;
-    if (!context) throw new Error("No context for briefing generation");
-
+  private async handleBriefingGeneration(ai: any, uid: string, body: any) {
+    const context = body.profile;
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Generate a dynamic session-based Career Strategy Briefing for a student with this profile: ${JSON.stringify(context)}`,
+      contents: `Generate a career strategy briefing (dashboard welcome) for this profile: ${JSON.stringify(context)}. Be motivating and data-driven.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -129,26 +109,27 @@ class VirtualServer {
     });
     
     const briefing = JSON.parse(response.text);
-    this.db.sessionBriefing = briefing;
-    this.saveDB();
+    // PERSIST TO REAL FIRESTORE
+    const briefingRef = doc(db, 'briefings', uid);
+    await setDoc(briefingRef, briefing);
     return briefing;
   }
 
-  private async handleChat(ai: GoogleGenAI, body: any) {
+  private async handleChat(ai: any, body: any) {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: body.message,
       config: { 
-        systemInstruction: `You are an expert AI Career Coach at PlacementOS. Provide specific, data-driven, and encouraging advice for college placements.`
+        systemInstruction: `You are the PlacementOS AI Assistant. Assist the student with placement strategy, coding help, and interview prep.`
       }
     });
     return { text: response.text };
   }
 
-  private async handleResumeAnalysis(ai: GoogleGenAI, body: any) {
+  private async handleResumeAnalysis(ai: any, body: any) {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Analyze this resume text: "${body.resumeText}" against this target job: "${body.jobDescription || 'General Tech Role'}". Provide structured feedback.`,
+      contents: `Perform a deep diagnostic audit on this resume text: "${body.resumeText}" against this job: "${body.jobDescription}". Output a comprehensive readiness report.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -168,4 +149,4 @@ class VirtualServer {
   }
 }
 
-export const server = new VirtualServer();
+export const server = new FirebaseBackend();

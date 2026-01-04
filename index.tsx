@@ -30,8 +30,7 @@ const AuthView = () => {
       } else {
         await signUpUser(email, password);
       }
-      // Reload ensures all providers and virtual server instances reset with fresh data
-      window.location.reload();
+      // Note: Removed window.location.reload() as state updates automatically via notifyListeners
     } catch (err: any) {
       setError(err.message || 'Authentication terminal error.');
       setLoading(false);
@@ -39,7 +38,7 @@ const AuthView = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col items-center justify-center p-6">
+    <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col items-center justify-center p-6 overflow-hidden">
       <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.3),transparent_70%)]" />
       <div className="max-w-md w-full glass p-10 rounded-[2.5rem] border border-white/10 text-center space-y-6 relative z-10 shadow-2xl animate-in fade-in zoom-in-95 duration-500">
         <div className="w-16 h-16 bg-blue-600 rounded-2xl mx-auto flex items-center justify-center text-3xl font-black shadow-2xl">P</div>
@@ -108,7 +107,7 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. Correct Route Guard Logic: Fetch Profile only after Auth
+  // 2. Fetch Profile only after Auth and enforce Profile Onboarding if missing
   useEffect(() => {
     const checkState = async () => {
       if (user) {
@@ -117,33 +116,38 @@ const App: React.FC = () => {
           const data = await api.get('/profile');
           setProfileData(data);
           
-          // ROUTE GUARD Logic: Redirect if missing document OR incomplete
+          // Force Onboarding if profile is incomplete or non-existent
           if (!data || data.profileCompleted === false) {
             setActiveTab('profile');
           }
         } catch (e) {
           console.error("Critical Profile Fetch Error:", e);
-          // Safety: Redirect to profile on error to allow re-creation/fix
           setActiveTab('profile');
         } finally {
           setProfileLoading(false);
         }
+      } else {
+        // Reset state on logout
+        setProfileData(null);
       }
     };
     checkState();
   }, [user]);
 
-  // 3. Robust Loading State check
   if (authLoading || (user && profileLoading)) return (
     <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center space-y-4">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em]">Syncing OS Profile...</p>
+      <div className="relative">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-4 h-4 bg-blue-400 rounded-full animate-pulse"></div>
+        </div>
+      </div>
+      <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">Syncing OS Identity...</p>
     </div>
   );
 
   if (!user) return <AuthView />;
 
-  // 4. Protection against 'undefined' property access crashes
   const isProfileIncomplete = !profileData || profileData.profileCompleted === false;
   const currentTab = isProfileIncomplete ? 'profile' : activeTab;
 
@@ -159,13 +163,14 @@ const App: React.FC = () => {
         case 'assessments': return <AssessmentCenter />;
         case 'profile': return <ProfileView onComplete={(data) => {
           setProfileData(data);
-          setActiveTab('dashboard');
+          // Small timeout to allow the profile synthesis success state to be visible
+          setTimeout(() => setActiveTab('dashboard'), 1500);
         }} />;
         default: return <Dashboard />;
       }
     } catch (err) {
       console.error("Runtime component crash caught:", err);
-      return <div className="p-20 text-center bg-white rounded-3xl">An unexpected UI error occurred. Please refresh.</div>;
+      return <div className="p-20 text-center bg-white rounded-3xl font-bold text-slate-800">A runtime error occurred. Please refresh the Career OS.</div>;
     }
   };
 

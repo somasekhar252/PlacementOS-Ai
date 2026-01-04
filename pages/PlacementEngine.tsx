@@ -1,8 +1,18 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const PlacementEngine: React.FC = () => {
   const [activeSection, setActiveSection] = useState('paths');
+  const [isSectionLoading, setIsSectionLoading] = useState(false);
+
+  // Trigger loading state whenever the section changes
+  useEffect(() => {
+    setIsSectionLoading(true);
+    const timer = setTimeout(() => {
+      setIsSectionLoading(false);
+    }, 800); // Simulate network latency
+    return () => clearTimeout(timer);
+  }, [activeSection]);
 
   const engineModules = [
     { id: 'paths', label: 'Learning Paths', icon: '🛣️' },
@@ -15,6 +25,20 @@ const PlacementEngine: React.FC = () => {
   const handleAchievementRedirect = (url: string) => {
     window.open(url, '_blank');
   };
+
+  const ModuleLoader = () => (
+    <div className="flex flex-col items-center justify-center min-h-[500px] w-full bg-white/50 rounded-[3rem] border border-slate-100 animate-in fade-in duration-300">
+      <div className="relative">
+        <div className="w-16 h-16 border-4 border-slate-100 border-t-blue-600 rounded-full animate-spin"></div>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-8 h-8 bg-blue-600/10 rounded-full animate-pulse"></div>
+        </div>
+      </div>
+      <p className="mt-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] animate-pulse">
+        Initializing Neural Link...
+      </p>
+    </div>
+  );
 
   return (
     <div className="space-y-12 animate-in fade-in duration-700">
@@ -44,12 +68,18 @@ const PlacementEngine: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-10">
-        <div className="lg:col-span-3 min-h-[700px]">
-          {activeSection === 'paths' && <LearningPathGrid />}
-          {activeSection === 'company' && <CompanyRoadmapGrid />}
-          {activeSection === 'assess' && <AssessmentArena />}
-          {activeSection === 'tree' && <SkillTreeDetails />}
-          {activeSection === 'peers' && <PeerLearningGrid />}
+        <div className="lg:col-span-3 min-h-[700px] relative">
+          {isSectionLoading ? (
+            <ModuleLoader />
+          ) : (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              {activeSection === 'paths' && <LearningPathGrid />}
+              {activeSection === 'company' && <CompanyRoadmapGrid />}
+              {activeSection === 'assess' && <AssessmentArena />}
+              {activeSection === 'tree' && <SkillTreeDetails />}
+              {activeSection === 'peers' && <PeerLearningGrid />}
+            </div>
+          )}
         </div>
 
         <div className="space-y-8">
@@ -92,7 +122,6 @@ const PlacementEngine: React.FC = () => {
         </div>
       </div>
 
-      {/* Industry Footer Disclaimer */}
       <footer className="pt-12 border-t border-slate-200">
         <p className="text-[10px] text-center text-slate-400 font-medium uppercase tracking-[0.2em]">
           Learning resources and assessments are powered by or redirected to industry-leading platforms. All trademarks belong to their respective owners.
@@ -103,7 +132,7 @@ const PlacementEngine: React.FC = () => {
 };
 
 const LearningPathGrid = () => (
-  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in duration-500">
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
     {[
       { title: 'Full Stack Web Development', icon: '💻', desc: 'Frontend, backend, databases, deployment.', tags: ['Career-Ready'], link: 'https://www.freecodecamp.org/learn/2022/responsive-web-design/' },
       { title: 'Data Science & ML', icon: '📊', desc: 'Python, ML algorithms, data visualization.', tags: ['Kaggle', 'Future-Proof'], link: 'https://www.kaggle.com/learn' },
@@ -135,7 +164,7 @@ const LearningPathGrid = () => (
 );
 
 const CompanyRoadmapGrid = () => (
-  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in duration-500">
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
     {[
       { 
         name: 'Google', 
@@ -242,7 +271,7 @@ const CompanyRoadmapGrid = () => (
 );
 
 const AssessmentArena = () => (
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in duration-500">
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
     {[
       { title: 'Quantitative Aptitude Test', qs: 50, time: '60m', diff: 'Medium', attempts: '1.2k', score: '78%', type: 'Aptitude', link: 'https://www.indiabix.com/' },
       { title: 'Data Structures & Algorithms', qs: 40, time: '90m', diff: 'Hard', attempts: '890', score: '65%', type: 'Technical', link: 'https://leetcode.com/problemset/all/' },
@@ -280,7 +309,7 @@ const AssessmentArena = () => (
 );
 
 const SkillTreeDetails = () => (
-  <div className="space-y-8 animate-in fade-in duration-500">
+  <div className="space-y-8">
     <div className="bg-blue-600 p-8 rounded-[3rem] text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl shadow-blue-500/20">
       <div className="space-y-2">
         <h3 className="text-2xl font-black">Visual Skill Dependencies</h3>
@@ -341,7 +370,7 @@ const SkillTreeDetails = () => (
 );
 
 const PeerLearningGrid = () => (
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in duration-500">
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
     {[
       { title: 'React Developers Circle', members: 156, link: 'https://discord.com', type: 'Web Development' },
       { title: 'Data Science Study Group', members: 203, link: 'https://discord.com', type: 'Data Science' },

@@ -1,92 +1,72 @@
+
 import { initializeApp } from "firebase/app";
 import { 
   getAuth, 
-  onAuthStateChanged, 
-  signOut, 
   signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword,
-  User
+  createUserWithEmailAndPassword, 
+  onAuthStateChanged as fbOnAuthStateChanged, 
+  signOut as fbSignOut 
 } from "firebase/auth";
 import { 
   getFirestore, 
   doc, 
   getDoc, 
   setDoc, 
-  updateDoc, 
-  collection, 
-  query, 
-  where, 
-  getDocs 
+  updateDoc 
 } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
 
+/**
+ * FIREBASE CONFIGURATION
+ * 1. Go to Firebase Console (https://console.firebase.google.com/)
+ * 2. Create a Project or select an existing one.
+ * 3. Add a "Web App" to your project.
+ * 4. Copy the config object below and paste your real values.
+ */
 const firebaseConfig = {
-  apiKey: (import.meta.env as any).VITE_FIREBASE_API_KEY || "AIzaSyDFO1z-upVOuJp-v0nMKJCHMq2XD3RvVN8",
-  authDomain: (import.meta.env as any).VITE_FIREBASE_AUTH_DOMAIN || "placementos-ai-d335c.firebaseapp.com",
-  projectId: (import.meta.env as any).VITE_FIREBASE_PROJECT_ID || "placementos-ai-d335c",
-  // use the correct default host for Firebase Storage
-  storageBucket: (import.meta.env as any).VITE_FIREBASE_STORAGE_BUCKET || "placementos-ai-d335c.appspot.com",
-  messagingSenderId: (import.meta.env as any).VITE_FIREBASE_MESSAGING_SENDER_ID || "734192125170",
-  appId: (import.meta.env as any).VITE_FIREBASE_APP_ID || "1:734192125170:web:bb08ca987b0ac72f1ffc6b",
-  measurementId: (import.meta.env as any).VITE_FIREBASE_MEASUREMENT_ID || "G-B7XS9K3VLD"
+  apiKey: "AIzaSyDFO1z-upVOuJp-v0nMKJCHMq2XD3RvVN8",
+  authDomain: "placementos-ai-d335c.firebaseapp.com",
+  projectId: "placementos-ai-d335c",
+  storageBucket: "placementos-ai-d335c.firebasestorage.app",
+  messagingSenderId: "734192125170",
+  appId: "1:734192125170:web:d79f7473fc76e1091ffc6b",
+  measurementId: "G-XXTMG65Y1B"
 };
 
+
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const storage = getStorage(app);
 
-// Authentication Listeners
-export { onAuthStateChanged, signOut };
+// Authentication Wrappers
+export const onAuthStateChanged = (callback: (user: any) => void) => {
+  return fbOnAuthStateChanged(auth, callback);
+};
 
-// Real Auth Actions
 export const loginUser = async (email: string, pass: string) => {
-  try {
-    const cred = await signInWithEmailAndPassword(auth, email, pass);
-    return cred.user;
-  } catch (err) {
-    // rethrow so callers can handle UI navigation/errors
-    throw err;
-  }
+  const userCredential = await signInWithEmailAndPassword(auth, email, pass);
+  return userCredential.user;
 };
 
 export const signUpUser = async (email: string, pass: string) => {
-  try {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    // Initialize user profile in Firestore immediately
-    await setDoc(doc(db, "users", cred.user.uid), {
-      email,
-      uid: cred.user.uid,
-      profileCompleted: false,
-      createdAt: new Date().toISOString()
-    });
-    return cred.user;
-  } catch (err) {
-    // cleanup or custom handling could go here; rethrow for caller
-    throw err;
-  }
-};
+  const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+  const user = userCredential.user;
 
-// New: initAuthNavigation helps route on auth state changes.
-// - navigate: function that receives a path string (e.g. from react-router's navigate or vue-router's router.push).
-// - onSignedIn: optional callback invoked with the User when signed in.
-// Returns: unsubscribe function to stop listening.
-export const initAuthNavigation = (
-  navigate: (path: string) => any,
-  onSignedIn?: (user: User) => void
-) => {
-  const unsubscribe = onAuthStateChanged(auth, (user) => {
-    if (user) {
-      // user is signed in -> go to dashboard
-      try { navigate("/dashboard"); } catch {}
-      if (onSignedIn) onSignedIn(user);
-    } else {
-      // not signed in -> go to login
-      try { navigate("/login"); } catch {}
-    }
+  // Initialize a profile entry in Firestore for the new user
+  const userRef = doc(db, 'users', user.uid);
+  await setDoc(userRef, {
+    uid: user.uid,
+    email: user.email,
+    profileCompleted: false,
+    createdAt: new Date().toISOString()
   });
-  return unsubscribe;
+
+  return user;
 };
 
-// Firestore Helpers
-export { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs };
+export const signOut = async () => {
+  return fbSignOut(auth);
+};
+
+// Firestore Exports (Modular)
+export { doc, getDoc, setDoc, updateDoc };

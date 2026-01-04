@@ -1,22 +1,21 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": [
-      "DOM",
-      "ES2022"
-    ],
     "experimentalDecorators": true,
     "useDefineForClassFields": false,
     "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "esModuleInterop": true,
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
+    "types": [
+      "node"
+    ],
+    "moduleResolution": "bundler",
     "isolatedModules": true,
-    "noEmit": true,
-    "baseUrl": ".",
+    "moduleDetection": "force",
     "allowJs": true,
     "jsx": "react-jsx",
     "paths": {
@@ -24,10 +23,7 @@
         "./*"
       ]
     },
-    "allowImportingTsExtensions": true
-  },
-  "include": [
-    "src",
-    "c:\\Users\\sekha\\Downloads\\placementos-ai\\firebase.ts"
-  ]
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  }
 }
