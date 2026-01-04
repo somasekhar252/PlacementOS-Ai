@@ -1,12 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { db, auth, doc, getDoc, setDoc, updateDoc } from "./firebase.ts";
+import { db, auth, doc, getDoc, setDoc } from "./firebase.ts";
 
-/**
- * Backend Strategy:
- * This class acts as a secure controller between the Frontend (api.ts) 
- * and our external services (Firebase for DB/Auth, Gemini for Intelligence).
- */
 class FirebaseBackend {
   private staticJobs = [
     { id: '1', title: 'Junior Frontend Developer', company: 'Google Cloud', location: 'Bangalore', salary: '₹12–18 LPA', matchScore: 85, link: 'https://google.com/careers', source: 'Google' },
@@ -16,8 +11,7 @@ class FirebaseBackend {
 
   async handleRequest(endpoint: string, method: string, body?: any) {
     const user = auth.currentUser;
-    // Allow job fetching without auth, but protect everything else
-    if (!user && endpoint !== '/jobs') throw new Error("Unauthorized: Please sign in to Career OS.");
+    if (!user && endpoint !== '/jobs') throw new Error("Unauthorized: Please sign in.");
 
     try {
       if (method === 'GET') {
@@ -44,11 +38,17 @@ class FirebaseBackend {
         if (endpoint === '/generate-briefing') return this.handleBriefingGeneration(ai, user.uid, body);
         if (endpoint === '/chat') return this.handleChat(ai, body);
         if (endpoint === '/analyze-resume') return this.handleResumeAnalysis(ai, body);
+        if (endpoint === '/generate-resume') return this.handleResumeGeneration(ai, body);
       }
       
       throw new Error(`Endpoint ${endpoint} not implemented.`);
     } catch (error: any) {
-      console.error("[REAL FIREBASE BACKEND ERROR]", error);
+      // Catch Firestore Permission Denied specifically
+      if (error.code === 'permission-denied' || (error.message && error.message.includes('permissions'))) {
+        console.error("CRITICAL: Firestore Security Rules are blocking this request.");
+        throw new Error("FIREBASE_PERMISSION_DENIED");
+      }
+      console.error("[BACKEND ERROR]", error);
       throw error;
     }
   }
@@ -56,7 +56,7 @@ class FirebaseBackend {
   private async handleProfileSynthesis(ai: any, uid: string, body: any) {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `You are a high-end tech recruiter. Based on these raw details: ${JSON.stringify(body.userDetails)}, synthesize a professional identity for this student. Focus on making them placement-ready.`,
+      contents: `You are a high-end tech recruiter. Based on these raw details: ${JSON.stringify(body.userDetails)}, synthesize a professional identity for this student.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -82,9 +82,8 @@ class FirebaseBackend {
       updatedAt: new Date().toISOString()
     };
 
-    // PERSIST TO REAL FIRESTORE
     const userRef = doc(db, 'users', uid);
-    await updateDoc(userRef, profileData);
+    await setDoc(userRef, profileData, { merge: true });
     return profileData;
   }
 
@@ -92,7 +91,7 @@ class FirebaseBackend {
     const context = body.profile;
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Generate a career strategy briefing (dashboard welcome) for this profile: ${JSON.stringify(context)}. Be motivating and data-driven.`,
+      contents: `Generate a career strategy briefing for this profile: ${JSON.stringify(context)}.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -109,27 +108,35 @@ class FirebaseBackend {
     });
     
     const briefing = JSON.parse(response.text);
-    // PERSIST TO REAL FIRESTORE
     const briefingRef = doc(db, 'briefings', uid);
     await setDoc(briefingRef, briefing);
     return briefing;
   }
 
   private async handleChat(ai: any, body: any) {
+    const { history, message } = body;
+    const contents = history.map((m: any) => ({
+      role: m.role,
+      parts: [{ text: m.text }]
+    }));
+    contents.push({ role: 'user', parts: [{ text: message }] });
+
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: body.message,
-      config: { 
-        systemInstruction: `You are the PlacementOS AI Assistant. Assist the student with placement strategy, coding help, and interview prep.`
+      contents,
+      config: {
+        systemInstruction: "You are a professional career assistant for PlacementOS. Help students with placement advice, learning paths, and interview prep."
       }
     });
+    
     return { text: response.text };
   }
 
   private async handleResumeAnalysis(ai: any, body: any) {
+    const { resumeText, jobDescription } = body;
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Perform a deep diagnostic audit on this resume text: "${body.resumeText}" against this job: "${body.jobDescription}". Output a comprehensive readiness report.`,
+      contents: `Analyze this resume against the job description.\n\nResume: ${resumeText}\n\nJob Description: ${jobDescription}`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -138,9 +145,51 @@ class FirebaseBackend {
             matchScore: { type: Type.NUMBER },
             strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
             risks: { type: Type.ARRAY, items: { type: Type.STRING } },
-            missingSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
             matchedSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
+            missingSkills: { type: Type.ARRAY, items: { type: Type.STRING } },
             improvementSuggestions: { type: Type.ARRAY, items: { type: Type.STRING } }
+          },
+          required: ["matchScore", "strengths", "risks", "matchedSkills", "missingSkills", "improvementSuggestions"]
+        }
+      }
+    });
+    
+    return JSON.parse(response.text);
+  }
+
+  private async handleResumeGeneration(ai: any, body: any) {
+    const { userDetails, templateType } = body;
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Generate a structured resume JSON based on these details: ${JSON.stringify(userDetails)}. Template style: ${templateType}`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            header: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                title: { type: Type.STRING },
+                contact: { type: Type.STRING }
+              }
+            },
+            summary: { type: Type.STRING },
+            skills: { type: Type.ARRAY, items: { type: Type.STRING } },
+            education: { type: Type.ARRAY, items: { type: Type.STRING } },
+            experience: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  role: { type: Type.STRING },
+                  company: { type: Type.STRING },
+                  duration: { type: Type.STRING },
+                  achievements: { type: Type.ARRAY, items: { type: Type.STRING } }
+                }
+              }
+            }
           }
         }
       }

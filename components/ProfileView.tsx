@@ -1,17 +1,71 @@
 
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import { db, auth, doc, updateDoc } from '../firebase.ts';
+import { auth, doc, setDoc } from '../firebase.ts';
 
 interface ProfileViewProps {
   onComplete?: (data: any) => void;
 }
+
+const FirebaseSetupGuide = () => (
+  <div className="max-w-3xl mx-auto py-12 px-6 animate-in fade-in duration-500">
+    <div className="bg-rose-50 border-2 border-rose-200 rounded-[3rem] p-10 space-y-8 shadow-2xl">
+      <div className="flex items-center gap-6">
+        <div className="w-16 h-16 bg-rose-600 rounded-2xl flex items-center justify-center text-white text-3xl shadow-xl">⚠️</div>
+        <div>
+          <h2 className="text-2xl font-black text-rose-950">Backend Access Locked</h2>
+          <p className="text-rose-700 font-medium">Your Firestore Database Security Rules are preventing access.</p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <p className="text-sm font-bold text-rose-900 uppercase tracking-widest">Resolution Steps:</p>
+        <ol className="space-y-3 text-sm text-rose-800 font-medium list-decimal ml-5">
+          <li>Open your <a href="https://console.firebase.google.com/" target="_blank" className="underline font-black">Firebase Console</a>.</li>
+          <li>Navigate to <strong>Firestore Database</strong> in the left sidebar.</li>
+          <li>Click the <strong>Rules</strong> tab at the top.</li>
+          <li>Replace the existing code with the snippet below:</li>
+        </ol>
+      </div>
+
+      <div className="bg-slate-900 rounded-3xl p-6 relative group">
+        <pre className="text-xs text-blue-300 font-mono leading-relaxed overflow-x-auto">
+{`rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /briefings/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}`}
+        </pre>
+        <button 
+          onClick={() => {
+            navigator.clipboard.writeText(`rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /users/{userId} {\n      allow read, write: if request.auth != null && request.auth.uid == userId;\n    }\n    match /briefings/{userId} {\n      allow read, write: if request.auth != null && request.auth.uid == userId;\n    }\n  }\n}`);
+            alert("Rules copied to clipboard!");
+          }}
+          className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+        >
+          Copy Rules
+        </button>
+      </div>
+
+      <p className="text-xs text-rose-600 font-bold text-center italic">
+        After clicking "Publish" in the Firebase Console, refresh this page to activate your Career OS.
+      </p>
+    </div>
+  </div>
+);
 
 const ProfileView: React.FC<ProfileViewProps> = ({ onComplete }) => {
   const [profile, setProfile] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [permissionError, setPermissionError] = useState(false);
   
   const [form, setForm] = useState({
     name: '',
@@ -27,6 +81,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ onComplete }) => {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
+        setPermissionError(false);
         const data = await api.get('/profile');
         if (data && data.profileCompleted) {
           setProfile(data);
@@ -34,9 +89,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ onComplete }) => {
         } else {
           setIsEditing(true);
         }
-      } catch (err) {
-        console.error("Profile view fetch error", err);
-        setIsEditing(true);
+      } catch (err: any) {
+        if (err.message === 'FIREBASE_PERMISSION_DENIED') {
+          setPermissionError(true);
+        } else {
+          console.error("Profile view fetch error", err);
+          setIsEditing(true);
+        }
       } finally {
         setLoading(false);
       }
@@ -47,14 +106,13 @@ const ProfileView: React.FC<ProfileViewProps> = ({ onComplete }) => {
   const handleSynthesize = async () => {
     if (!form.name || !form.skills) return;
     setLoading(true);
+    setPermissionError(false);
     const user = auth.currentUser;
     if (!user) return;
 
     try {
-      // 1. Get AI reasoning for the profile
       const result = await api.post('/synthesize-profile', { userDetails: form });
       
-      // 2. Mark profile as completed locally
       const finalizedData = {
         ...result,
         fullName: form.name,
@@ -66,20 +124,25 @@ const ProfileView: React.FC<ProfileViewProps> = ({ onComplete }) => {
       };
       
       setProfile(finalizedData);
-      
-      // 3. Trigger dashboard briefing generation
       await api.post('/generate-briefing', { profile: finalizedData });
       
       setLoading(false);
       setIsSuccess(true);
-      
       if (onComplete) onComplete(finalizedData);
-    } catch (err) {
-      console.error("Synthesis error:", err);
-      alert("AI Synthesis failed. Please check your connectivity and try again.");
+    } catch (err: any) {
+      if (err.message === 'FIREBASE_PERMISSION_DENIED') {
+        setPermissionError(true);
+      } else {
+        console.error("Synthesis error:", err);
+        alert("AI Synthesis failed. Please check connectivity.");
+      }
       setLoading(false);
     }
   };
+
+  if (permissionError) {
+    return <FirebaseSetupGuide />;
+  }
 
   if (loading) {
     return (
@@ -107,9 +170,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({ onComplete }) => {
         <div className="text-center space-y-3">
           <h2 className="text-4xl font-black text-slate-900 tracking-tight">Systems Synced</h2>
           <p className="text-slate-500 font-medium text-lg">Your professional OS has been successfully initialized.</p>
-          <div className="pt-4">
-             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600 animate-pulse">Unlocking Dashboard...</span>
-          </div>
         </div>
       </div>
     );
@@ -257,11 +317,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({ onComplete }) => {
                 <p className="text-sm font-bold text-slate-700 leading-relaxed pt-2">{area}</p>
               </div>
             ))}
-          </div>
-          <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
-             <p className="text-xs font-bold text-emerald-700 leading-relaxed text-center">
-               This profile is securely stored in <strong>Virtual Space</strong> and is used to drive the <strong>AI Placement Engine</strong>.
-             </p>
           </div>
         </div>
       </div>
